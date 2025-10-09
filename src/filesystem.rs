@@ -1,4 +1,4 @@
-use nix::mount::{mount, umount2, MntFlags, MsFlags};
+use nix::mount::{MntFlags, MsFlags, mount, umount2};
 use nix::unistd::{chdir, chroot, pivot_root};
 use std::fs;
 use std::os::unix::fs::symlink;
