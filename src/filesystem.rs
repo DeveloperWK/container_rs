@@ -1,4 +1,4 @@
-use nix::mount::{MntFlags, MsFlags, mount, umount2};
+use nix::mount::{mount, umount2, MntFlags, MsFlags};
 use nix::unistd::{chdir, chroot, pivot_root};
 use std::fs;
 use std::os::unix::fs::symlink;
@@ -118,7 +118,7 @@ impl FilesystemManager {
                 message: format!("chdir to new root failed: {e}"),
             })
             .context("changing to new root directory")?;
-        Self::cleanup_old_root(&put_old);
+        Self::cleanup_old_root(&put_old)?;
         log::debug!("Root pivot completed successfully");
         Ok(())
     }
