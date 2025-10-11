@@ -9,11 +9,21 @@ impl ProcessManager {
         let command_path = if command.starts_with("/") {
             command.to_string()
         } else {
-            format!("/bin/{command}")
+            let possiable_path = vec![
+                format!("/bin/{}", command),
+                format!("/usr/bin/{}", command),
+                format!("/sbin/{}", command),
+                format!("/usr/sbin/{}", command),
+            ];
+            possiable_path
+                .into_iter()
+                .find(|p| Path::new(p).exists())
+                .unwrap_or_else(|| format!("/bin/{}", command))
         };
         if !Path::new(&command_path).exists() {
             return Err(ContainerError::process_execution(format!(
-                "command not found: {command}"
+                "Command not found in container: {} (tried: {})",
+                command, command_path
             )));
         }
         let argv = Self::build_argv(&command_path, args)?;
@@ -24,22 +34,41 @@ impl ProcessManager {
                 ContainerError::process_execution(format!("execve failed for {command}: {e}"))
             })
             .context("executing container command")?;
-        unreachable!()
+        unreachable!("execve should not return")
     }
     pub fn build_argv(command_path: &str, args: &[String]) -> ContainerResult<Vec<CString>> {
         let mut argv = Vec::with_capacity(args.len() + 1);
-        argv.push(CString::new(command_path)?);
+        argv.push(CString::new(command_path).map_err(|e| {
+            ContainerError::process_execution(format!(
+                "Invalid command path (contains null byte): {}",
+                e
+            ))
+        })?);
         for arg in args {
-            argv.push(CString::new(arg.as_str())?)
+            argv.push(CString::new(arg.as_str()).map_err(|e| {
+                ContainerError::process_execution(format!(
+                    "Invalid argument (contains null byte): {}",
+                    e
+                ))
+            })?)
         }
         Ok(argv)
     }
     pub fn build_environment() -> ContainerResult<Vec<CString>> {
-        let env = vec![
-            CString::new("PATH=/bin:/usr/bin")?,
-            CString::new("TERM=xterm")?,
-            CString::new("container=rust-container-runtime")?,
+        let env_vers = vec![
+            "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "TERM=xterm",
+            "HOME=/root",
+            "HOSTNAME=rust-container",
+            "container=rust-container-runtime",
         ];
+        let mut env = Vec::with_capacity(env_vers.len());
+        for var in env_vers {
+            env.push(CString::new(var).map_err(|e| {
+                ContainerError::process_execution(format!("Invalid environment variable: {}", e))
+            })?);
+        }
+
         Ok(env)
     }
     pub fn get_current_pid() -> Pid {

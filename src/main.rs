@@ -41,6 +41,8 @@ fn run() -> ContainerResult<()> {
         isolate_user: false,
     };
     NamespaceManager::unshare_namespaces(ns_config)?;
+    NamespaceManager::enter_pid_namespace()?;
+    info!("Running as PID 1 in container (host PID: {})", getpid());
     let hostname = config.hostname.as_deref().unwrap_or("rust-container");
     NamespaceManager::set_hostname(&hostname);
     let rootfs_path = std::path::Path::new(&config.rootfs);

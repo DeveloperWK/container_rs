@@ -1,4 +1,6 @@
 use nix::sched::{unshare, CloneFlags};
+use nix::sys::wait::{waitpid, WaitStatus};
+use nix::unistd::{fork, ForkResult};
 use nix::unistd::{getpid, sethostname};
 
 use crate::error::{ContainerError, ContainerResult, Context};
@@ -65,6 +67,55 @@ impl NamespaceManager {
         log::info!("Successfully unshared namespaces: {flags:?}");
         Ok(())
     }
+    pub fn enter_pid_namespace() -> ContainerResult<()> {
+        log::info!("Forking to enter PID namespace");
+        match unsafe { fork() } {
+            Ok(ForkResult::Parent { child }) => {
+                log::info!(
+                    "Parent process waiting for container child (PID: {})",
+                    child
+                );
+                loop {
+                    match waitpid(child, None) {
+                        Ok(WaitStatus::Exited(_, code)) => {
+                            log::info!("Container exited with code: {}", code);
+                            std::process::exit(code);
+                        }
+                        Ok(WaitStatus::Signaled(_, signal, _)) => {
+                            log::warn!("Container killed by signal: {:?}", signal);
+                            std::process::exit(128 + signal as i32);
+                        }
+                        Ok(WaitStatus::Stopped(_, _)) => {
+                            log::debug!("Child process stopped, continuing to wait");
+                            continue;
+                        }
+                        Ok(WaitStatus::Continued(_)) => {
+                            log::debug!("Child process continued, continuing to wait");
+                            continue;
+                        }
+                        Ok(status) => {
+                            log::warn!("Container exited with unexpected status: {:?}", status);
+                            std::process::exit(1);
+                        }
+                        Err(e) => {
+                            log::error!("Failed to wait for child: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+            }
+            Ok(ForkResult::Child) => {
+                log::info!(
+                    "Child process started (PID 1 in container, host PID: {})",
+                    getpid()
+                );
+                Ok(())
+            }
+            Err(e) => Err(ContainerError::NamespaceSetup {
+                message: format!("Fork failed: {}", e),
+            }),
+        }
+    }
     pub fn set_hostname(hostname: &str) -> ContainerResult<()> {
         log::info!("Setting hostname to: {hostname}");
         sethostname(hostname)
@@ -76,7 +127,7 @@ impl NamespaceManager {
 
         Ok(())
     }
-    pub fn get_current_pid() -> i32 {
-        getpid().as_raw()
-    }
+    // pub fn get_current_pid() -> i32 {
+    //     getpid().as_raw()
+    // }
 }
