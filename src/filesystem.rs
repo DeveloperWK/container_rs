@@ -36,11 +36,11 @@ impl FilesystemManager {
     pub fn setup_container_filesystem(rootfs_path: &Path) -> ContainerResult<()> {
         log::info!("Setting up container filesystem");
         Self::validate_rootfs(&rootfs_path)?;
-        let absPath = fs::canonicalize(rootfs_path).map_err(|e| {
+        let abs_path = fs::canonicalize(rootfs_path).map_err(|e| {
             ContainerError::filesystem_setup(format!("Failed to canonicalize path: {e}"))
         })?;
-        log::debug!("Using absolute path: {absPath:?}");
-        Self::pivot_root(&absPath)?; // Use absolute path
+        log::debug!("Using absolute path: {abs_path:?}");
+        Self::pivot_root(&abs_path)?;
         Self::mount_proc(Path::new("/"))?;
         Self::mount_sysfs(Path::new("/"))?;
         Self::mount_devtmpfs(Path::new("/"))?;

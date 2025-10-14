@@ -1,6 +1,6 @@
-use nix::sched::{unshare, CloneFlags};
-use nix::sys::wait::{waitpid, WaitStatus};
-use nix::unistd::{fork, ForkResult};
+use nix::sched::{CloneFlags, unshare};
+use nix::sys::wait::{WaitStatus, waitpid};
+use nix::unistd::{ForkResult, fork};
 use nix::unistd::{getpid, sethostname};
 
 use crate::error::{ContainerError, ContainerResult, Context};
@@ -96,6 +96,11 @@ impl NamespaceManager {
                         Ok(status) => {
                             log::warn!("Container exited with unexpected status: {:?}", status);
                             std::process::exit(1);
+                        }
+                        Err(nix::errno::Errno::ECHILD) => {
+                            // Child already exited (race condition)
+                            log::debug!("Child already exited");
+                            std::process::exit(0);
                         }
                         Err(e) => {
                             log::error!("Failed to wait for child: {}", e);

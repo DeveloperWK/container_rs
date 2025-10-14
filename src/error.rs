@@ -30,6 +30,8 @@ pub enum ContainerError {
     },
     #[error("Container initialization failed: {message}")]
     Initialization { message: String },
+    #[error("Cgroup(V2) setup failed: {message}")]
+    Cgroup { message: String },
 }
 pub type ContainerResult<T> = Result<T, ContainerError>;
 
@@ -63,6 +65,9 @@ impl<T> Context<T> for ContainerResult<T> {
                         message: format!("{context_msg}:{message}"),
                     }
                 }
+                ContainerError::Cgroup { message } => ContainerError::Cgroup {
+                    message: format!("{context_msg}:{message}"),
+                },
                 _ => err,
             }
         })
@@ -92,6 +97,11 @@ impl ContainerError {
     }
     pub fn invalid_configuration(message: impl Into<String>) -> Self {
         ContainerError::InvalidConfiguration {
+            message: message.into(),
+        }
+    }
+    pub fn cgroup_setup(message: impl Into<String>) -> Self {
+        ContainerError::Cgroup {
             message: message.into(),
         }
     }

@@ -6,6 +6,7 @@ pub struct ContainerConfig {
     pub command: String,
     pub args: Vec<String>,
     pub hostname: Option<String>,
+    pub memory_limit_mb: Option<u64>,
 }
 
 pub fn parse_args() -> ContainerConfig {
@@ -19,6 +20,14 @@ pub fn parse_args() -> ContainerConfig {
                 .required(true)
                 .help("Path to root filesystem")
                 .value_parser(clap::value_parser!(String)),
+        )
+        .arg(
+            Arg::new("memory")
+                .long("memory")
+                .short('m')
+                .value_name("MB")
+                .help("Memory limit in megabytes (e.g., 512)")
+                .value_parser(clap::value_parser!(u64)),
         )
         .arg(
             Arg::new("hostname")
@@ -55,10 +64,12 @@ pub fn parse_args() -> ContainerConfig {
         .map(|vals| vals.cloned().collect())
         .unwrap_or_default();
     let hostname = matches.get_one::<String>("hostname").cloned();
+    let memory_limit_mb = matches.get_one::<u64>("memory").copied();
     ContainerConfig {
         rootfs,
         command,
         args,
         hostname,
+        memory_limit_mb,
     }
 }
