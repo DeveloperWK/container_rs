@@ -274,8 +274,23 @@ impl CgroupManager {
         log::debug!("Created cgroup directory: {:?}", self.cgroup_path);
         self.enable_controllers_v2()?;
         if let Some(memory_limit) = self.config.memory_limit {
-            self.set_memory_limit(memory_limit)?;
-        }
+            self.set_memory_limit_v2(memory_limit)?;
+        };
+        if let Some(swap_limit) = self.config.memory_swap_limit {
+            self.set_memory_swap_v2(swap_limit)?;
+        };
+        if let Some(cpu_weight) = self.config.cpu_weight {
+            self.set_cpu_weight_v2(cpu_weight)?;
+        };
+        if let Some(cpu_quota) = self.config.cpu_quota {
+            if let Some(cpu_period) = self.config.cpu_period {
+                self.set_cpu_max_v2(cpu_quota, cpu_period)?;
+            }
+        };
+        if let Some(pids_limit) = self.config.pids_limit {
+            self.set_pids_limit_v2(pids_limit)?;
+        };
+
         log::info!("Cgroup v2 setup completed successfully");
         Ok(())
     }
@@ -311,7 +326,7 @@ impl CgroupManager {
             })?;
         Ok(())
     }
-    fn set_memory_limit(&self, limit: u64) -> ContainerResult<()> {
+    fn set_memory_limit_v2(&self, limit: u64) -> ContainerResult<()> {
         let memory_max = self.cgroup_path.join("memory_max");
         self.write_file(&memory_max, &limit.to_string())?;
         log::info!(
@@ -319,6 +334,45 @@ impl CgroupManager {
             limit,
             limit / 1024 / 1024
         );
+        Ok(())
+    }
+    fn set_memory_swap_v2(&self, limit: u64) -> ContainerResult<()> {
+        let swap_max = self.cgroup_path.join("memory.swap.max");
+        let _ = self.write_file(&swap_max, &limit.to_string())?;
+        log::info!("Set swap limit: {} bytes", limit);
+        Ok(())
+    }
+    fn set_cpu_weight_v2(&self, weight: u64) -> ContainerResult<()> {
+        let cpu_weight = self.cgroup_path.join("cpu.weight");
+        let _ = self.write_file(&cpu_weight, &weight.to_string())?;
+        log::info!("Set CPU weight: {}", weight);
+        Ok(())
+    }
+    fn set_cpu_max_v2(&self, quota: u64, period: u64) -> ContainerResult<()> {
+        let cpu_max = self.cgroup_path.join("cpu.max");
+        let value = if quota == u64::MAX {
+            "max".to_string()
+        } else {
+            format!("{} {}", quota, period)
+        };
+        let _ = self.write_file(&cpu_max, &value)?;
+        log::info!(
+            "Set CPU quota: {} us / {} us ({:.1}%)",
+            quota,
+            period,
+            (quota as f64 / period as f64) * 100.0
+        );
+        Ok(())
+    }
+    fn set_pids_limit_v2(&self, limit: u64) -> ContainerResult<()> {
+        let pids_max = self.cgroup_path.join("pids.max");
+        let value = if limit == u64::MAX {
+            "max".to_string()
+        } else {
+            limit.to_string()
+        };
+        let _ = self.write_file(&pids_max, &value);
+        log::info!("Set PIDs limit: {}", value);
         Ok(())
     }
     fn add_process_v2(&self, pid: i32) -> ContainerResult<()> {

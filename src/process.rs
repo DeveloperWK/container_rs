@@ -26,7 +26,7 @@ pub struct ProcessManager;
 impl ProcessManager {
     pub fn execute_container_command(command: &str, args: &[String]) -> ContainerResult<()> {
         log::info!("Executing container command: {command} with args: {args:?}");
-        Self::ensure_devpts_mounted()?;
+        // Self::ensure_devpts_mounted()?;
         // Find executable path
         let command_path = if command.starts_with("/") {
             command.to_string()
@@ -58,45 +58,45 @@ impl ProcessManager {
             Self::execute_without_pty(command, &argv, &envp)
         }
     }
-    fn ensure_devpts_mounted() -> ContainerResult<()> {
-        // Check if /dev/pts exists
-        let dev_pts = Path::new("/dev/pts");
-        if !dev_pts.exists() {
-            log::info!("Creating /dev/pts directory");
-            std::fs::create_dir_all(dev_pts).ok();
-        }
+    // fn ensure_devpts_mounted() -> ContainerResult<()> {
+    //     // Check if /dev/pts exists
+    //     let dev_pts = Path::new("/dev/pts");
+    //     if !dev_pts.exists() {
+    //         log::info!("Creating /dev/pts directory");
+    //         std::fs::create_dir_all(dev_pts).ok();
+    //     }
 
-        // Try to mount devpts if not already mounted
-        // We ignore errors here since it might already be mounted
-        let result = mount(
-            Some("devpts"),
-            "/dev/pts",
-            Some("devpts"),
-            MsFlags::empty(),
-            Some("newinstance,ptmxmode=0666,mode=0620"),
-        );
+    //     // Try to mount devpts if not already mounted
+    //     // We ignore errors here since it might already be mounted
+    //     let result = mount(
+    //         Some("devpts"),
+    //         "/dev/pts",
+    //         Some("devpts"),
+    //         MsFlags::empty(),
+    //         Some("newinstance,ptmxmode=0666,mode=0620"),
+    //     );
 
-        match result {
-            Ok(_) => {
-                log::info!("devpts filesystem mounted at /dev/pts");
-            }
-            Err(e) => {
-                // Check if it's already mounted (EBUSY is normal)
-                if e != nix::errno::Errno::EBUSY {
-                    log::warn!("Could not mount devpts: {e} (may already be mounted)");
-                }
-            }
-        }
+    //     match result {
+    //         Ok(_) => {
+    //             log::info!("devpts filesystem mounted at /dev/pts");
+    //         }
+    //         Err(e) => {
+    //             // Check if it's already mounted (EBUSY is normal)
+    //             if e != nix::errno::Errno::EBUSY {
+    //                 log::warn!("Could not mount devpts: {e} (may already be mounted)");
+    //             }
+    //         }
+    //     }
 
-        // Ensure /dev/ptmx exists and links to /dev/pts/ptmx
-        let dev_ptmx = Path::new("/dev/ptmx");
-        if !dev_ptmx.exists() {
-            log::info!("Creating /dev/ptmx symlink");
-            std::os::unix::fs::symlink("/dev/pts/ptmx", "/dev/ptmx").ok();
-        }
+    //     // Ensure /dev/ptmx exists and links to /dev/pts/ptmx
+    //     let dev_ptmx = Path::new("/dev/ptmx");
+    //     if !dev_ptmx.exists() {
+    //         log::info!("Creating /dev/ptmx symlink");
+    //         std::os::unix::fs::symlink("/dev/pts/ptmx", "/dev/ptmx").ok();
+    //     }
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
     fn execute_with_pty(command: &str, argv: &[CString], envp: &[CString]) -> ContainerResult<()> {
         let pty = openpty(None, None)
             .map_err(|e| ContainerError::process_execution(format!("openpty failed: {e}")))?;
