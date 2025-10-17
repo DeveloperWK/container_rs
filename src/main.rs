@@ -26,7 +26,7 @@ use nix::{
 use process::ProcessManager;
 // use signal_hook::iterator::Signals;
 
-use crate::cgroup::{CgroupConfig, CgroupManager};
+use cgroup::{CgroupConfig, CgroupManager};
 
 fn main() {
     env_logger::Builder::from_default_env()
