@@ -7,6 +7,8 @@ pub struct ContainerConfig {
     pub args: Vec<String>,
     pub hostname: Option<String>,
     pub memory_limit_mb: Option<u64>,
+    pub pids_limit: Option<i64>,
+    pub cpu_percent: Option<u64>,
 }
 
 pub fn parse_args() -> ContainerConfig {
@@ -28,6 +30,22 @@ pub fn parse_args() -> ContainerConfig {
                 .value_name("MB")
                 .help("Memory limit in megabytes (e.g., 512)")
                 .value_parser(clap::value_parser!(u64)),
+        )
+        .arg(
+            Arg::new("cpu")
+                .long("cpu")
+                .short('c')
+                .value_name("PERCENT")
+                .help("CPU limit as percentage of one core (e.g., 50 = 50%)")
+                .value_parser(clap::value_parser!(u64)),
+        )
+        .arg(
+            Arg::new("pids")
+                .long("pids")
+                .short('p')
+                .value_name("COUNT")
+                .help("Maximum number of processes/threads")
+                .value_parser(clap::value_parser!(i64)),
         )
         .arg(
             Arg::new("hostname")
@@ -65,11 +83,15 @@ pub fn parse_args() -> ContainerConfig {
         .unwrap_or_default();
     let hostname = matches.get_one::<String>("hostname").cloned();
     let memory_limit_mb = matches.get_one::<u64>("memory").copied();
+    let cpu_percent = matches.get_one::<u64>("cpu").copied();
+    let pids_limit = matches.get_one::<i64>("pids").copied();
     ContainerConfig {
         rootfs,
         command,
         args,
         hostname,
         memory_limit_mb,
+        cpu_percent,
+        pids_limit,
     }
 }

@@ -5,13 +5,6 @@ mod filesystem;
 mod namespace;
 mod process;
 
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    thread,
-};
 
 use cli::{ContainerConfig, parse_args};
 use error::{ContainerError, ContainerResult};
@@ -58,11 +51,19 @@ fn run() -> ContainerResult<()> {
         isolate_ipc: true,
         isolate_user: false,
     };
-    let cgroup_manager = if config.memory_limit_mb.is_some() {
+    let cgroup_manager = if config.memory_limit_mb.is_some() || config.cpu_percent.is_some() || config.pids_limit.is_some()  {
         let mut cgroup_config = CgroupConfig::new(format!("container-{}", getpid()));
         if let Some(mem) = config.memory_limit_mb {
             cgroup_config = cgroup_config.with_memory_mb(mem);
             info!("Setting memory limit: {} MB", mem);
+        }
+        if let Some(cpu) =config.cpu_percent  {
+            cgroup_config = cgroup_config.with_cpu_percent(cpu);
+            log::info!("Setting CPU limit: {}%", cpu)
+        }
+        if let Some(pids) = config.pids_limit   {
+            cgroup_config = cgroup_config.with_pids_limit(pids);
+            log::info!("Setting PIDs limit: {}", pids)
         }
         let manager = CgroupManager::new(cgroup_config)?;
         manager.setup()?;

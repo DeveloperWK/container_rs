@@ -7,7 +7,7 @@ use std::thread;
 use std::time::Duration;
 
 const CGROUP_ROOT: &str = "/sys/fs/cgroup";
-
+// memory and pids not write
 #[derive(Debug, Clone)]
 
 pub struct CgroupConfig {
@@ -17,7 +17,7 @@ pub struct CgroupConfig {
     pub cpu_weight: Option<u64>,
     pub cpu_quota: Option<u64>,
     pub cpu_period: Option<u64>,
-    pub pids_limit: Option<u64>,
+    pub pids_limit: Option<i64>,
 }
 impl Default for CgroupConfig {
     fn default() -> Self {
@@ -48,7 +48,7 @@ impl CgroupConfig {
         self.cpu_quota = Some((period * cpu_percent / 100) as u64);
         self
     }
-    pub fn with_pids_limit(mut self, limit: u64) -> Self {
+    pub fn with_pids_limit(mut self, limit: i64) -> Self {
         self.pids_limit = Some(limit);
         self
     }
@@ -210,7 +210,6 @@ impl CgroupManager {
                 log::info!("Triggered memory reclaim for {:?}", path);
             }
         }
-
         // 2️⃣ Clean child cgroups first (recursive)
         if let Ok(entries) = fs::read_dir(path) {
             for entry in entries.flatten() {
@@ -364,9 +363,9 @@ impl CgroupManager {
         );
         Ok(())
     }
-    fn set_pids_limit_v2(&self, limit: u64) -> ContainerResult<()> {
+    fn set_pids_limit_v2(&self, limit: i64) -> ContainerResult<()> {
         let pids_max = self.cgroup_path.join("pids.max");
-        let value = if limit == u64::MAX {
+        let value = if limit == i64::MAX {
             "max".to_string()
         } else {
             limit.to_string()
