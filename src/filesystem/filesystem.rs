@@ -1,12 +1,11 @@
 use core::str;
 use nix::mount::{MntFlags, MsFlags, mount, umount2};
-use nix::unistd::{chdir, chroot, pivot_root};
+use nix::unistd::{chdir, pivot_root};
 use std::fs;
-use std::os::unix::fs::symlink;
-use std::path::{Path, PathBuf};
+
+use std::path::Path;
 
 use crate::error::{ContainerError, ContainerResult, Context};
-use crate::filesystem;
 
 #[derive(Debug)]
 pub struct FilesystemManager;
@@ -101,39 +100,6 @@ impl FilesystemManager {
         log::debug!("Mounted devtmpfs filesystem");
         Ok(())
     }
-    // fn pivot_root(rootfs_path: &Path) -> ContainerResult<()> {
-    //     log::info!("Pivoting root to: {rootfs_path:?}");
-    //     mount(
-    //         Some(rootfs_path),
-    //         rootfs_path,
-    //         None::<&str>,
-    //         MsFlags::MS_BIND | MsFlags::MS_REC,
-    //         None::<&str>,
-    //     )
-    //     .map_err(|e| ContainerError::filesystem_setup(format!("Failed to bind mount rootfs: {e}")))
-    //     .context("bind mounting rootfs to itself")?;
-
-    //     chdir(rootfs_path)
-    //         .map_err(|e| ContainerError::Filesystem {
-    //             message: format!("chdir to rootfs failed: {e}"),
-    //         })
-    //         .context("changing to rootfs directory")?;
-    //     let put_old_name = "oldroot";
-    //     fs::create_dir_all(put_old_name)
-    //         .map_err(|e| ContainerError::filesystem_setup(format!("Failed to create put_old: {e}")))
-    //         .context("pivoting root filesystem")?;
-    //     pivot_root(".", put_old_name)
-    //         .map_err(|e| ContainerError::Filesystem {
-    //             message: format!("pivot_root failed: {e}"),
-    //         })
-    //         .context("pivoting root filesystem")?;
-    //     chdir("/")
-    //         .map_err(|e| ContainerError::filesystem_setup(format!("chdir to new root failed: {e}")))
-    //         .context("changing to new root directory")?;
-    //     Self::cleanup_old_root(Path::new("/oldroot"))?;
-    //     log::debug!("Root pivot completed successfully");
-    //     Ok(())
-    // }
     fn pivot_root(rootfs_path: &Path) -> ContainerResult<()> {
         log::info!("Pivoting root to: {rootfs_path:?}");
 
@@ -205,7 +171,7 @@ impl FilesystemManager {
         Ok(())
     }
     fn cleanup_old_root(put_old: &Path) -> ContainerResult<()> {
-        if let Err(e) = umount2("/oldroot", MntFlags::MNT_DETACH) {
+        if let Err(e) = umount2(put_old, MntFlags::MNT_DETACH) {
             log::warn!("Failed to unmount old root: {e}, but continuing")
         }
         if let Err(e) = fs::remove_dir_all("/oldroot") {

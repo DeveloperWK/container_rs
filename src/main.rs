@@ -6,18 +6,14 @@ mod namespace;
 mod process;
 
 
-use cli::{ContainerConfig, parse_args};
+use cli::parse_args;
 use error::{ContainerError, ContainerResult};
 use filesystem::FilesystemManager;
 use log::{debug, error, info};
 use namespace::{NamespaceConfig, NamespaceManager};
-use nix::sys::signal;
-use nix::{
-    libc::{self, nice, signal},
-    unistd::{Pid, Uid, getpid},
-};
+use nix::unistd::{Uid, getpid};
 use process::ProcessManager;
-// use signal_hook::iterator::Signals;
+
 
 use cgroup::{CgroupConfig, CgroupManager};
 
@@ -51,7 +47,7 @@ fn run() -> ContainerResult<()> {
         isolate_ipc: true,
         isolate_user: false,
     };
-    let cgroup_manager = if config.memory_limit_mb.is_some() || config.cpu_percent.is_some() || config.pids_limit.is_some()  {
+    let _cgroup_manager = if config.memory_limit_mb.is_some() || config.cpu_percent.is_some() || config.pids_limit.is_some()  {
         let mut cgroup_config = CgroupConfig::new(format!("container-{}", getpid()));
         if let Some(mem) = config.memory_limit_mb {
             cgroup_config = cgroup_config.with_memory_mb(mem);
@@ -67,7 +63,7 @@ fn run() -> ContainerResult<()> {
         }
         let manager = CgroupManager::new(cgroup_config)?;
         manager.setup()?;
-        manager.add_process(getpid().as_raw());
+        manager.add_process(getpid().as_raw())?;
         Some(manager)
     } else {
         info!("No resource limits specified, skipping cgroup setup");
@@ -83,13 +79,6 @@ fn run() -> ContainerResult<()> {
     info!("Container environment setup complete, executing command...");
 
     ProcessManager::execute_container_command(&config.command, &config.args)?;
-    // if let Some(ref manager) = cgroup_manager {
-    //     info!("Cleaning up cgroups before exit...");
-    //     // manager.cleanup().ok();
-    //     if let Err(e) = manager.cleanup() {
-    //         log::warn!("Failed to clean up cgroup: {:?}", e);
-    //     }
-    // }
-
+   
     Ok(())
 }

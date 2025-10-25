@@ -132,7 +132,5 @@ impl NamespaceManager {
 
         Ok(())
     }
-    // pub fn get_current_pid() -> i32 {
-    //     getpid().as_raw()
-    // }
+
 }

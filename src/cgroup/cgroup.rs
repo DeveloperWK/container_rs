@@ -1,13 +1,12 @@
-use crate::error::{ContainerError, ContainerResult, Context};
+use crate::error::{ContainerError, ContainerResult};
+use nix::unistd::Pid;
 use std::fs::{self, File, OpenOptions};
-use std::io::ErrorKind;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
-
 const CGROUP_ROOT: &str = "/sys/fs/cgroup";
-// memory and pids not write
+
 #[derive(Debug, Clone)]
 
 pub struct CgroupConfig {
@@ -97,175 +96,42 @@ impl CgroupManager {
     pub fn setup(&self) -> ContainerResult<()> {
         log::info!("Setting up cgroups for container: {}", self.config.name);
         match self.cgroup_version {
-            CgroupVersion::V1 => self.setup_v1(),
-            CgroupVersion::V2 => self.setup_v2(),
+            CgroupVersion::V1 => self.setup_v1()?,
+            CgroupVersion::V2 => self.setup_v2()?,
         };
         Ok(())
     }
     pub fn add_process(&self, pid: i32) -> ContainerResult<()> {
         log::info!("Adding process {} to cgroup", pid);
         match self.cgroup_version {
-            CgroupVersion::V1 => self.add_process_v1(pid),
-            CgroupVersion::V2 => self.add_process_v2(pid),
+            CgroupVersion::V1 => self.add_process_v1(pid)?,
+            CgroupVersion::V2 => self.add_process_v2(pid)?,
         };
         Ok(())
     }
-    //pub fn cleanup(&self) -> ContainerResult<()> {
-    //    log::info!("Cleaning up cgroup: {}", self.config.name);
-    //    if self.cgroup_path.exists() {
-    //        fs::remove_dir(&self.cgroup_path).map_err(|e| {
-    //            log::warn!("Failed to remove cgroup directory: {}", e);
-    //            ContainerError::Cgroup {
-    //                message: format!("Failed to cleanup cgroup: {}", e),
-    //            }
-    //        })?;
-    //        log::info!("Successfully cleaned up cgroup");
-    //    } else {
-    //        log::debug!("Cgroup directory doesn't exist, skipping cleanup");
-    //    }
-    //    Ok(())
-    //}
-    // fn cleanup(&self) -> ContainerResult<()> {
-    //     if !self.cgroup_path.exists() {
-    //         log::info!("Cgroup {:#?} already removed", self.cgroup_path);
-    //         return Ok(());
-    //     }
-    //     let reclaim_path = self.cgroup_path.join("memory.reclaim");
-    //     if reclaim_path.exists() {
-    //         if let Err(e) = fs::write(&reclaim_path, b"1") {
-    //             log::warn!(
-    //                 "Failed to write memory.reclaim for {:#?}: {}",
-    //                 self.cgroup_path,
-    //                 e
-    //             )
-    //         } else {
-    //             log::info!("Triggered memory reclaim for {:#?}", self.cgroup_path);
-    //         }
-    //     }
-    //     if let Ok(entries) = fs::read_dir(&self.cgroup_path) {
-    //         for entry in entries.flatten() {
-    //             let path = entry.path();
-    //             if path.is_dir() {
-    //                 let child = CgroupManager {
-    //                     cgroup_path: path,
-    //                     cgroup_version: self.cgroup_version,
-    //                     config: self.config.clone(),
-    //                 };
-    //                 let _ = child.cleanup();
-    //             }
-    //         }
-    //     }
-    //     let timeout = Duration::from_secs(2);
-    //     let start = std::time::Instant::now();
-    //     loop {
-    //         let mem_current = fs::read_to_string(&self.cgroup_path.join("memory.current"))
-    //             .ok()
-    //             .and_then(|s| s.trim().parse::<u64>().ok())
-    //             .unwrap_or(0);
-    //         let kmem_usage =
-    //             fs::read_to_string(&self.cgroup_path.join("memory.kmem.usage_in_bytes"))
-    //                 .ok()
-    //                 .and_then(|s| s.trim().parse::<u64>().ok())
-    //                 .unwrap_or(0);
-    //         if mem_current == 0 && kmem_usage == 0 {
-    //             match fs::read_dir(&self.cgroup_path) {
-    //                 Ok(_) => {
-    //                     log::info!("Successfully removed cgroup: {:#?}", self.cgroup_path);
-    //                     break;
-    //                 }
-    //                 Err(e) => {
-    //                     if start.elapsed() > timeout {
-    //                         log::error!(
-    //                             "Failed to remove cgroup {:#?} after retries: {:#?}",
-    //                             self.cgroup_path,
-    //                             e
-    //                         );
-    //                         break;
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //         if start.elapsed() > timeout {
-    //             log::warn!(
-    //                 "Timeout reached waiting for memory to be released in {:#?}",
-    //                 self.cgroup_path
-    //             );
-    //             break;
-    //         }
-    //         thread::sleep(Duration::from_millis(50));
-    //     }
-    //     Ok(())
-    // }
-    fn cleanup(&self) -> ContainerResult<()> {
-        use std::{fs, thread, time::Duration};
 
+    pub fn cleanup(&self) -> ContainerResult<()> {
         let path = &self.cgroup_path;
-
-        // 1️⃣ Trigger memory reclaim if possible
-        let reclaim_path = path.join("memory.reclaim");
-        if reclaim_path.exists() {
-            if let Err(e) = fs::write(&reclaim_path, b"1") {
-                log::warn!("Failed to write memory.reclaim for {:?}: {}", path, e);
+        if path.exists() {
+            log::info!("remove cgroup {:?}", path);
+            let kill_file = path.join("cgroup.kill");
+            if kill_file.exists() {
+                self.write_file(&kill_file, "1")?;
             } else {
-                log::info!("Triggered memory reclaim for {:?}", path);
-            }
-        }
-        // 2️⃣ Clean child cgroups first (recursive)
-        if let Ok(entries) = fs::read_dir(path) {
-            for entry in entries.flatten() {
-                let sub = entry.path();
-                if sub.is_dir() {
-                    let child = CgroupManager {
-                        cgroup_path: sub,
-                        cgroup_version: self.cgroup_version,
-                        config: self.config.clone(),
-                    };
-                    let _ = child.cleanup();
+                let procs_path = path.join("cgroup.procs");
+                let procs = self.read_file(&procs_path)?;
+                for line in procs.lines() {
+                    let pid: i32 = line
+                        .parse()
+                        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
+                    let _ = nix::sys::signal::kill(Pid::from_raw(pid), nix::sys::signal::SIGKILL)?;
                 }
             }
-        }
-
-        // 3️⃣ Wait for memory release before removing
-        let timeout = Duration::from_secs(2);
-        let start = std::time::Instant::now();
-
-        loop {
-            let mem_current = fs::read_to_string(path.join("memory.current"))
-                .ok()
-                .and_then(|s| s.trim().parse::<u64>().ok())
-                .unwrap_or(0);
-            let kmem_usage = fs::read_to_string(path.join("memory.kmem.usage_in_bytes"))
-                .ok()
-                .and_then(|s| s.trim().parse::<u64>().ok())
-                .unwrap_or(0);
-
-            if mem_current == 0 && kmem_usage == 0 {
-                thread::sleep(Duration::from_secs(1)); // mimic your manual `sleep 1`
-            }
-
-            if start.elapsed() > timeout {
-                log::warn!(
-                    "Timeout waiting for memory release in {:?} (mem={}, kmem={})",
-                    path,
-                    mem_current,
-                    kmem_usage
-                );
-                break;
-            }
-
-            // thread::sleep(Duration::from_millis(50));
-        }
-        match fs::remove_dir_all(path) {
-            Ok(_) => log::info!("Removed cgroup {:?}", path),
-            Err(e) if e.kind() == ErrorKind::NotFound => {
-                log::info!("Cgroup {:?} already gone (ENOENT)", path)
-            }
-            Err(e) => log::warn!("Failed to remove cgroup {:?}: {}", path, e),
+            self.delete_with_retry(path, 5, Duration::from_millis(100))?;
         }
 
         Ok(())
     }
-
     fn setup_v2(&self) -> ContainerResult<()> {
         fs::create_dir_all(&self.cgroup_path).map_err(|e| ContainerError::Cgroup {
             message: format!("Failed to create cgroup directory: {}", e),
@@ -310,7 +176,33 @@ impl CgroupManager {
         }
         Ok(())
     }
+    fn delete_with_retry<P: AsRef<Path>, L: Into<Option<Duration>>>(
+        &self,
+        path: P,
+        retries: u32,
+        limit_backoff: L,
+    ) -> ContainerResult<()> {
+        let mut attemps = 0;
+        let mut delay = Duration::from_millis(10);
+        let path = path.as_ref();
+        let limit = limit_backoff.into().unwrap_or(Duration::MAX);
+        while attemps < retries {
+          if fs::remove_dir(path).is_ok() {
+            return Ok(());
+        }
 
+            thread::sleep(delay);
+            attemps += 1;
+            delay *= attemps;
+            if delay > limit {
+                delay = limit;
+            }
+        }
+
+let err = std::io::Error::new(std::io::ErrorKind::TimedOut, "could not delete".to_string());
+log::error!("Failed to delete {:?}: {:?}", path, err);
+return Err(err.into());
+    }
     fn write_file(&self, path: &Path, content: &str) -> ContainerResult<()> {
         let mut file = OpenOptions::new()
             .write(true)
@@ -326,12 +218,18 @@ impl CgroupManager {
         Ok(())
     }
     fn set_memory_limit_v2(&self, limit: u64) -> ContainerResult<()> {
-        let memory_max = self.cgroup_path.join("memory_max");
+        let memory_max = self.cgroup_path.join("memory.max");
+        let memory_swap_limit = self.cgroup_path.join("memory.swap.max");
         self.write_file(&memory_max, &limit.to_string())?;
+        self.write_file(&memory_swap_limit, "0")?;
         log::info!(
             "Set memory limit: {} bytes ({} MB)",
             limit,
             limit / 1024 / 1024
+        );
+           log::info!(
+            "Set memory_swap limit path: {:?}",
+            memory_swap_limit
         );
         Ok(())
     }
@@ -383,13 +281,13 @@ impl CgroupManager {
 
     // ==================== Cgroup V1 Implementation ====================
     fn setup_v1(&self) -> ContainerResult<()> {
-        Ok(())
+      todo!()
     }
     fn setup_memory_v1(&self) -> ContainerResult<()> {
-        Ok(())
+        todo!()
     }
     fn add_process_v1(&self, pid: i32) -> ContainerResult<()> {
-        Ok(())
+        todo!()
     }
     fn read_file(&self, path: &Path) -> ContainerResult<String> {
         let mut file = File::open(path).map_err(|e| ContainerError::Cgroup {
@@ -408,12 +306,9 @@ impl CgroupManager {
 
 impl Drop for CgroupManager {
     fn drop(&mut self) {
+        println!("Dropping cgroup {:?}", self.cgroup_path);
         if let Err(e) = self.cleanup() {
-            log::warn!(
-                "Cgroup cleanup failed in Drop for {:#?}: {:#?}",
-                self.cleanup(),
-                e
-            )
+            log::warn!("Cgroup cleanup failed in Drop: {:?}", e);
         }
     }
 }
